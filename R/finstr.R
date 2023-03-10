@@ -110,30 +110,32 @@ xbrl_get_data <- function(elements, xbrl_vars,
   
   res <-
     elements %>%
-    dplyr::inner_join(xbrl_vars$fact, by = "elementId")
-
+    dplyr::inner_join(xbrl_vars$fact, by = "elementId",multiple = "all") %>%
+    dplyr::filter(.,!(duplicated(gsub(".*_","",contextId))&duplicated(elementId)&duplicated(fact)))
+  
   min_level <- min(res$level, na.rm = TRUE)
-
+  
   min_dec <- min(as.numeric(res$decimals), na.rm = TRUE)
   
-  context_filter <- res %>% dplyr::filter_(~level == min_level) %>%
+  context_filter <- dplyr::filter(res,level == min_level) %>%
     getElement("contextId") %>% unique
-
-  decimals_filter <- res %>% dplyr::filter_(~level == min_level) %>%
+  
+  decimals_filter <- dplyr::filter(res,level == min_level) %>%
     getElement("decimals") %>%  unique
   
   res <-
     res %>%
-    dplyr::filter_(~contextId %in% context_filter) %>% 
-    dplyr::filter_(~decimals %in% decimals_filter) %>% 
-    dplyr::mutate_(fact = ~as.numeric(fact), decimals = ~min_dec )%>%
-    dplyr::inner_join(xbrl_vars$context, by = "contextId") %>%
-    dplyr::select_(~contextId ,  ~startDate ,  ~endDate ,  ~elementId ,  ~fact ,  ~decimals) %>%
+    dplyr::filter(.,contextId %in% context_filter) %>% 
+    dplyr::filter(.,decimals %in% decimals_filter) %>% 
+    dplyr::mutate(.,fact = as.numeric(fact), decimals = min_dec )%>%
+    dplyr::inner_join(.,xbrl_vars$context, by = "contextId") %>%
+    dplyr::select(.,contextId ,  startDate ,  endDate ,  elementId ,  fact ,  decimals) %>%
+    unique() %>%
     #dplyr::add_rownames() %>% 
-    tidyr::spread_("elementId", "fact") %>%
-    dplyr::arrange_(~endDate)
+    tidyr::pivot_wider(.,names_from ="elementId",values_from = "fact") %>%
+    dplyr::arrange(.,endDate)
   
-
+  
   vec1 <- elements$elementId[! elements$elementId %in% names(res)]
   df1 <- stats::setNames( data.frame(rbind(rep(0, length(vec1)))), vec1)
   res <- cbind(res, df1)
@@ -142,7 +144,7 @@ xbrl_get_data <- function(elements, xbrl_vars,
   
   #res <- res[, c(names(res)[1:4], elements$elementId)]
   res <- res[, c(finstr_cols(res), elements$elementId)]
-
+  
   # Handling strange NAs - if some columns are total NA:
   empty_cols <- sapply(
     res[elements$elementId], function(x) length(stats::na.omit(x))==0 
@@ -156,11 +158,11 @@ xbrl_get_data <- function(elements, xbrl_vars,
   if(basic_contexts) {
     context_filter2 <-
       res %>% 
-      dplyr::group_by_(~startDate, ~endDate) %>% 
-      dplyr::summarise_(min_context = ~contextId[nchar(contextId) == min(nchar(contextId))]) %>% 
+      dplyr::group_by(.,startDate, endDate) %>% 
+      dplyr::summarise(.,min_context = contextId[nchar(contextId) == min(nchar(contextId))]) %>% 
       getElement("min_context")
     
-    res <- res %>% dplyr::filter_(~contextId %in% context_filter2)
+    res <- res %>% dplyr::filter(,contextId %in% context_filter2)
   }
   
   if(complete_first)
