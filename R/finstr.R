@@ -101,7 +101,7 @@ xbrl_get_statement_ids <- function(xbrl_vars) {
 #' @export
 xbrl_get_data <- function(elements, xbrl_vars, 
                           complete_only = FALSE, complete_first = TRUE, 
-                          basic_contexts = TRUE) {
+                          basic_contexts = FALSE, filter_by_minlv_elementId=TRUE) {
   # gets data in normal format (with variables as columns and 
   # time periods as rows)
   
@@ -110,10 +110,15 @@ xbrl_get_data <- function(elements, xbrl_vars,
   
   res <-
     elements %>%
-    dplyr::inner_join(xbrl_vars$fact, by = "elementId",multiple = "all") %>%
+    dplyr::inner_join(xbrl_vars$fact, by = "elementId",multiple = "all")
+  
+  contextIdbyCount=sort(table(res$contextId),decreasing = TRUE)
+  
+  res <-
+    dplyr::arrange(res,factor(contextId,levels = names(contextIdbyCount))) %>%
     dplyr::filter(.,!(duplicated(gsub(".*_","",contextId))&duplicated(elementId)&duplicated(fact)))
   
-  min_level <- min(res$level, na.rm = TRUE)
+  #min_level <- min(res$level, na.rm = TRUE)
   
   min_dec <- min(as.numeric(res$decimals), na.rm = TRUE)
   
@@ -123,9 +128,10 @@ xbrl_get_data <- function(elements, xbrl_vars,
   decimals_filter <- dplyr::filter(res,level == min_level) %>%
     getElement("decimals") %>%  unique
   
+  if(filter_by_minlv_elementId) res <- dplyr::filter(res,contextId %in% context_filter)
+  
   res <-
-    res %>%
-    dplyr::filter(.,contextId %in% context_filter) %>% 
+    res %>% 
     dplyr::filter(.,decimals %in% decimals_filter) %>% 
     dplyr::mutate(.,fact = as.numeric(fact), decimals = min_dec )%>%
     dplyr::inner_join(.,xbrl_vars$context, by = "contextId") %>%
